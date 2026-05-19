@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>呪術廻戦 — Cursed Technique System</title>
+
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<!-- Three.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<style>
+  /* ============================================================
+     DESIGN SYSTEM — JJK Cyber-Cursed Aesthetic
+     Dark void aesthetic with neon cursed energy accents
+  ============================================================ */
+  @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Share+Tech+Mono&family=Noto+Sans+JP:wght@300;400;700&display=swap');
+
+  :root {
+    --void-black:   #010108;
+    --deep-navy:    #04051a;
+    --gojo-blue:    #00d4ff;
+    --gojo-indigo:  #4040ff;
+    --sukuna-red:   #ff1a1a;
+    --sukuna-dark:  #8b0000;
+    --hollow-purple:#c940ff;
+    --hollow-magenta:#ff40c8;
+    --cursed-gold:  #ffd700;
+    --ui-border:    rgba(0,212,255,0.25);
+    --ui-glow:      rgba(0,212,255,0.08);
+    --text-primary: #e8e8ff;
+    --text-dim:     rgba(232,232,255,0.45);
+    --font-display: 'Cinzel Decorative', serif;
+    --font-mono:    'Share Tech Mono', monospace;
+    --font-body:    'Noto Sans JP', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--void-black);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── ROOT LAYOUT ── */
+  #app {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── BACKGROUND GRID ── */
+  #bg-grid {
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,212,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,212,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── CORNER DECORATIONS ── */
+  .corner {
+    position: fixed;
+    width: 80px; height: 80px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .corner::before, .corner::after {
+    content: '';
+    position: absolute;
+    background: var(--gojo-blue);
+  }
+  .corner::before { width: 100%; height: 2px; }
+  .corner::after  { width: 2px; height: 100%; }
+  .corner.tl { top: 16px; left: 16px; }
+  .corner.tr { top: 16px; right: 16px; transform: scaleX(-1); }
+  .corner.bl { bottom: 16px; left: 16px; transform: scaleY(-1); }
+  .corner.br { bottom: 16px; right: 16px; transform: scale(-1); }
+
+  /* ── VIDEO FEED (hidden, source only) ── */
+  #video {
+    position: fixed;
+    top: 0; left: 0;
+    width: 1px; height: 1px;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  /* ── WEBCAM CANVAS (mirrored preview) ── */
+  #cam-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    opacity: 0.18;
+    transform: scaleX(-1);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* ── AURA CANVAS (hand tracking overlay) ── */
+  #aura-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 10;
+    transform: scaleX(-1);
+  }
+
+  /* ── THREE.JS VFX CANVAS ── */
+  #vfx-canvas {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 11;
+  }
+
+  /* ── DOMAIN EXPANSION OVERLAY ── */
+  #domain-overlay {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* ── SLASH OVERLAY (Sukuna) ── */
+  #slash-canvas {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 21;
+    opacity: 0;
+  }
+
+  /* ── START SCREEN ── */
+  #start-screen {
+    position: fixed; inset: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, rgba(4,5,26,0.97) 0%, rgba(1,1,8,1) 70%);
+    gap: 24px;
+  }
+
+  .title-kanji {
+    font-family: var(--font-body);
+    font-weight: 700;
+    font-size: clamp(14px, 3vw, 22px);
+    letter-spacing: 0.5em;
+    color: var(--cursed-gold);
+    text-shadow: 0 0 30px rgba(255,215,0,0.6);
+    animation: pulse-gold 2s ease-in-out infinite;
+  }
+
+  .title-main {
+    font-family: var(--font-display);
+    font-size: clamp(22px, 5vw, 48px);
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-align: center;
+    line-height: 1.2;
+    background: linear-gradient(135deg, var(--gojo-blue) 0%, var(--hollow-purple) 50%, var(--sukuna-red) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    filter: drop-shadow(0 0 20px rgba(201,64,255,0.5));
+  }
+
+  .title-sub {
+    font-family: var(--font-mono);
+    font-size: clamp(10px, 1.5vw, 14px);
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .technique-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 8px 0;
+  }
+
+  .tech-item {
+    font-family: var(--font-mono);
+    font-size: clamp(9px, 1.2vw, 12px);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 14px;
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 3px;
+    background: rgba(255,255,255,0.02);
+  }
+  .tech-item .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tech-item:nth-child(1) .dot { background: var(--gojo-blue); box-shadow: 0 0 6px var(--gojo-blue); }
+  .tech-item:nth-child(2) .dot { background: var(--sukuna-red); box-shadow: 0 0 6px var(--sukuna-red); }
+  .tech-item:nth-child(3) .dot { background: var(--sukuna-red); box-shadow: 0 0 6px var(--sukuna-red); }
+  .tech-item:nth-child(4) .dot { background: var(--hollow-purple); box-shadow: 0 0 6px var(--hollow-purple); }
+
+  .start-btn {
+    margin-top: 8px;
+    padding: 14px 48px;
+    font-family: var(--font-display);
+    font-size: clamp(11px, 1.5vw, 14px);
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--void-black);
+    background: linear-gradient(135deg, var(--gojo-blue), var(--gojo-indigo));
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s, box-shadow 0.2s;
+    box-shadow: 0 0 30px rgba(0,212,255,0.4), inset 0 1px 0 rgba(255,255,255,0.2);
+  }
+  .start-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0 50px rgba(0,212,255,0.7), inset 0 1px 0 rgba(255,255,255,0.3);
+  }
+  .start-btn::after {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%);
+    transform: translateX(-100%);
+    transition: transform 0.4s;
+  }
+  .start-btn:hover::after { transform: translateX(100%); }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 30;
+    display: none;
+  }
+
+  /* Status Panel */
+  #status-panel {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    min-width: 340px;
+  }
+
+  #technique-name {
+    font-family: var(--font-display);
+    font-size: clamp(14px, 2.5vw, 22px);
+    font-weight: 900;
+    letter-spacing: 0.12em;
+    text-align: center;
+    color: var(--text-primary);
+    text-shadow: 0 0 20px currentColor;
+    opacity: 0;
+    transition: opacity 0.3s;
+    white-space: nowrap;
+  }
+
+  #charge-bar-wrap {
+    width: 300px;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 2px;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #charge-bar {
+    height: 100%;
+    width: 0%;
+    border-radius: 2px;
+    transition: width 0.1s linear;
+    background: linear-gradient(90deg, var(--gojo-blue), var(--hollow-purple));
+  }
+
+  #status-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* Top Right Info */
+  #fps-display {
+    position: absolute;
+    top: 20px; right: 24px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--text-dim);
+  }
+
+  /* Top Left — Hand Detection Indicators */
+  #hand-indicators {
+    position: absolute;
+    top: 20px; left: 24px;
+    display: flex;
+    gap: 10px;
+  }
+  .hand-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .hand-dot.active {
+    background: var(--gojo-blue);
+    box-shadow: 0 0 8px var(--gojo-blue);
+  }
+
+  /* ── TECHNIQUE ANNOUNCE BANNER ── */
+  #announce {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    height: 0;
+  }
+
+  .announce-text {
+    font-family: var(--font-display);
+    font-size: clamp(24px, 6vw, 64px);
+    font-weight: 900;
+    letter-spacing: 0.15em;
+    text-align: center;
+    opacity: 0;
+    transform: scale(1.4) translateY(-20px);
+    position: absolute;
+    top: 30vh;
+    white-space: nowrap;
+  }
+
+  /* ── LOADING BAR ── */
+  #loading-screen {
+    position: fixed; inset: 0;
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: var(--void-black);
+    display: none;
+  }
+
+  #loading-text {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    letter-spacing: 0.3em;
+    color: var(--text-dim);
+  }
+
+  #loading-bar-wrap {
+    width: 240px;
+    height: 2px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  #loading-bar {
+    height: 100%;
+    background: var(--gojo-blue);
+    width: 0%;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 8px var(--gojo-blue);
+  }
+
+  /* ── SCANLINE ── */
+  #scanline {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 60;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,0.06) 3px,
+      rgba(0,0,0,0.06) 4px
+    );
+    opacity: 0.4;
+  }
+
+  /* ── ANIMATIONS ── */
+  @keyframes pulse-gold {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+  }
+
+  @keyframes domain-ripple {
+    0%   { transform: scale(0) rotate(0deg); opacity: 1; }
+    100% { transform: scale(3) rotate(180deg); opacity: 0; }
+  }
+
+  @keyframes announce-in {
+    0%   { opacity: 0; transform: scale(1.5); filter: blur(20px); }
+    30%  { opacity: 1; transform: scale(1); filter: blur(0px); }
+    70%  { opacity: 1; transform: scale(1); }
+    100% { opacity: 0; transform: scale(0.8); filter: blur(10px); }
+  }
+
+  @keyframes screen-shake {
+    0%, 100% { transform: translate(0,0); }
+    20% { transform: translate(-6px, 4px); }
+    40% { transform: translate(5px, -5px); }
+    60% { transform: translate(-4px, 6px); }
+    80% { transform: translate(7px, -3px); }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Background -->
+  <div id="bg-grid"></div>
+  <div class="corner tl"></div>
+  <div class="corner tr"></div>
+  <div class="corner bl"></div>
+  <div class="corner br"></div>
+  <div id="scanline"></div>
+
+  <!-- Video source -->
+  <video id="video" playsinline autoplay muted></video>
+
+  <!-- Canvases -->
+  <canvas id="cam-canvas"></canvas>
+  <canvas id="aura-canvas"></canvas>
+  <canvas id="slash-canvas"></canvas>
+  <div id="domain-overlay"></div>
+  <div id="vfx-canvas"></div>
+
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div id="loading-text">INITIALIZING CURSED ENERGY SENSORS...</div>
+    <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  </div>
+
+  <!-- Start Screen -->
+  <div id="start-screen">
+    <div class="title-kanji">呪術廻戦 ― CURSED TECHNIQUE SYSTEM</div>
+    <div class="title-main">Domain Expansion<br>Interface</div>
+    <div class="title-sub">MediaPipe Hand Recognition · Real-time VFX</div>
+
+    <div class="technique-list">
+      <div class="tech-item"><div class="dot"></div>Gojo: Cross fingers → <strong>Infinite Void</strong></div>
+      <div class="tech-item"><div class="dot"></div>Sukuna: Both palms joined → <strong>Malevolent Shrine</strong></div>
+      <div class="tech-item"><div class="dot"></div>Gun gesture (1 hand) → <strong>Cursed Reversal: Red</strong></div>
+      <div class="tech-item"><div class="dot"></div>Claw left + extend right → <strong>Hollow Purple</strong></div>
+    </div>
+
+    <button class="start-btn" id="start-btn">⊕ GRANT ACCESS</button>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud">
+    <div id="hand-indicators">
+      <div class="hand-dot" id="hand-left"></div>
+      <div class="hand-dot" id="hand-right"></div>
+    </div>
+    <div id="fps-display">-- FPS</div>
+
+    <div id="status-panel">
+      <div id="status-label">SCANNING...</div>
+      <div id="charge-bar-wrap"><div id="charge-bar"></div></div>
+      <div id="technique-name">—</div>
+    </div>
+  </div>
+
+  <!-- Announce Banner -->
+  <div id="announce">
+    <div class="announce-text" id="announce-text"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   JJK CURSED TECHNIQUE SYSTEM
+   Hand tracking + VFX Engine
+   ============================================================ */
+
+// ── GLOBALS ──────────────────────────────────────────────────
+const video     = document.getElementById('video');
+const camCanvas = document.getElementById('cam-canvas');
+const camCtx    = camCanvas.getContext('2d');
+const auraCanvas = document.getElementById('aura-canvas');
+const auraCtx   = auraCanvas.getContext('2d');
+const slashCanvas = document.getElementById('slash-canvas');
+const slashCtx  = slashCanvas.getContext('2d');
+
+let W = window.innerWidth, H = window.innerHeight;
+let fps = 0, frameCount = 0, lastFpsTime = performance.now();
+let hands = null, camera = null;
+
+// Current detected state
+const state = {
+  hands: [],          // raw landmarks per hand [{landmarks, handedness}, ...]
+  gesture: null,      // 'gojo' | 'sukuna' | 'red' | 'purple' | null
+  chargeStart: null,
+  chargeProgress: 0,  // 0–1
+  activated: false,
+  activationTimer: 0,
+  // For Red / Purple state machine
+  redState: 'idle',   // 'idle' | 'charging' | 'fired'
+  redPrevZ: null,
+  purpleState: 'idle',
+  // VFX flags
+  domainActive: false,
+  slashActive: false,
+  redOrbActive: false,
+  purpleActive: false,
+};
+
+// ── RESIZE HANDLER ──────────────────────────────────────────
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  camCanvas.width  = W; camCanvas.height  = H;
+  auraCanvas.width = W; auraCanvas.height = H;
+  slashCanvas.width = W; slashCanvas.height = H;
+}
+resize();
+window.addEventListener('resize', resize);
+
+/* ============================================================
+   MEDIAPIPE HAND LANDMARK INDICES
+   0=WRIST
+   1-4=THUMB: CMC,MCP,IP,TIP
+   5-8=INDEX: MCP,PIP,DIP,TIP
+   9-12=MIDDLE: MCP,PIP,DIP,TIP
+   13-16=RING: MCP,PIP,DIP,TIP
+   17-20=PINKY: MCP,PIP,DIP,TIP
+============================================================ */
+const LM = {
+  WRIST:0, T_CMC:1,T_MCP:2,T_IP:3,T_TIP:4,
+  I_MCP:5,I_PIP:6,I_DIP:7,I_TIP:8,
+  M_MCP:9,M_PIP:10,M_DIP:11,M_TIP:12,
+  R_MCP:13,R_PIP:14,R_DIP:15,R_TIP:16,
+  P_MCP:17,P_PIP:18,P_DIP:19,P_TIP:20
+};
+
+// ── GEOMETRY HELPERS ────────────────────────────────────────
+function dist(a, b) {
+  return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2);
+}
+function dist2D(a, b) {
+  return Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2);
+}
+
+/**
+ * Returns true if the finger tip is raised above (lower Y in screen space)
+ * its MCP joint by a threshold relative to hand size.
+ */
+function isFingerExtended(lm, tipIdx, mcpIdx) {
+  const handSize = dist2D(lm[LM.WRIST], lm[LM.M_MCP]);
+  return (lm[mcpIdx].y - lm[tipIdx].y) > handSize * 0.2;
+}
+
+function isThumbExtended(lm) {
+  // Thumb goes sideways; compare TIP x vs IP x
+  const handSize = dist2D(lm[LM.WRIST], lm[LM.M_MCP]);
+  return Math.abs(lm[LM.T_TIP].x - lm[LM.T_IP].x) > handSize * 0.15;
+}
+
+/** Normalized landmark to canvas pixel coords */
+function toCanvas(lm) {
+  return { x: lm.x * W, y: lm.y * H };
+}
+
+/* ============================================================
+   GESTURE DETECTORS
+============================================================ */
+
+/**
+ * GOJO: Infinite Void
+ * One hand: index and middle fingers crossed
+ * (index tip close to middle base, and middle tip close to index base)
+ */
+function detectGojo(lm) {
+  const handSize = dist2D(lm[LM.WRIST], lm[LM.M_MCP]);
+  // Index tip should be near Middle MCP
+  const ixToMmcp = dist2D(lm[LM.I_TIP], lm[LM.M_MCP]);
+  // Middle tip should be near Index MCP
+  const mtToImcp = dist2D(lm[LM.M_TIP], lm[LM.I_MCP]);
+  // Crossed: tips are near each other's bases
+  const crossed = ixToMmcp < handSize * 0.45 && mtToImcp < handSize * 0.45;
+  // Ring and pinky mostly folded
+  const ringDown = !isFingerExtended(lm, LM.R_TIP, LM.R_MCP);
+  const pinkyDown = !isFingerExtended(lm, LM.P_TIP, LM.P_MCP);
+  return crossed && ringDown && pinkyDown;
+}
+
+/**
+ * SUKUNA: Malevolent Shrine
+ * Two hands: both open, fingertips of both hands touching/close to each other
+ */
+function detectSukuna(lmA, lmB) {
+  if (!lmA || !lmB) return false;
+  // All 5 fingertips on each hand
+  const tipsA = [LM.T_TIP, LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP].map(i => lmA[i]);
+  const tipsB = [LM.T_TIP, LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP].map(i => lmB[i]);
+  // Average position of fingertips for each hand
+  const avgA = tipsA.reduce((acc, t) => ({x: acc.x+t.x/5, y: acc.y+t.y/5, z: acc.z+t.z/5}), {x:0,y:0,z:0});
+  const avgB = tipsB.reduce((acc, t) => ({x: acc.x+t.x/5, y: acc.y+t.y/5, z: acc.z+t.z/5}), {x:0,y:0,z:0});
+  // Hands close together
+  const handsClose = dist2D(avgA, avgB) < 0.25;
+  // Both hands with spread open fingers (all 4 fingers extended)
+  const openA = [LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP].filter(
+    (tip, i) => isFingerExtended(lmA, tip, [LM.I_MCP, LM.M_MCP, LM.R_MCP, LM.P_MCP][i])
+  ).length >= 3;
+  const openB = [LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP].filter(
+    (tip, i) => isFingerExtended(lmB, tip, [LM.I_MCP, LM.M_MCP, LM.R_MCP, LM.P_MCP][i])
+  ).length >= 3;
+  return handsClose && openA && openB;
+}
+
+/**
+ * RED: Cursed Technique Reversal — Gun gesture
+ * One hand: index finger extended, thumb extended (out), other fingers curled
+ */
+function detectRed(lm) {
+  const indexUp   = isFingerExtended(lm, LM.I_TIP, LM.I_MCP);
+  const thumbOut  = isThumbExtended(lm);
+  const middleDown = !isFingerExtended(lm, LM.M_TIP, LM.M_MCP);
+  const ringDown   = !isFingerExtended(lm, LM.R_TIP, LM.R_MCP);
+  const pinkyDown  = !isFingerExtended(lm, LM.P_TIP, LM.P_MCP);
+  return indexUp && thumbOut && middleDown && ringDown && pinkyDown;
+}
+
+/**
+ * PURPLE: Hollow Purple
+ * Left hand: claw-like (fingers curled inward, knuckles up)
+ * Right hand: extended forward (index, middle extended)
+ */
+function detectPurple(lmLeft, lmRight) {
+  if (!lmLeft || !lmRight) return false;
+  // Left hand claw: fingers partially curled (tips near MCPs but MCPs raised)
+  const leftClaw = [LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP].filter(
+    (tip, i) => isFingerExtended(lmLeft, tip, [LM.I_MCP, LM.M_MCP, LM.R_MCP, LM.P_MCP][i])
+  ).length <= 1; // mostly NOT extended = curled
+  // Right hand: index extended, middle extended
+  const rightIndex = isFingerExtended(lmRight, LM.I_TIP, LM.I_MCP);
+  const rightMiddle = isFingerExtended(lmRight, LM.M_TIP, LM.M_MCP);
+  return leftClaw && rightIndex && rightMiddle;
+}
+
+/* ============================================================
+   GESTURE STATE MACHINE
+============================================================ */
+const CHARGE_TIME = 1500; // ms to hold before activation
+
+function updateGestureState(handResults) {
+  const now = performance.now();
+  state.hands = handResults;
+
+  // Separate left and right landmarks
+  let lmLeft = null, lmRight = null;
+  for (const h of handResults) {
+    if (h.handedness === 'Left')  lmLeft  = h.landmarks;
+    if (h.handedness === 'Right') lmRight = h.landmarks;
+  }
+
+  // Single-hand gestures use any detected hand
+  const lmAny = lmLeft || lmRight;
+  let detectedGesture = null;
+
+  // Priority order: purple > gojo > sukuna > red
+  if (lmLeft && lmRight && detectPurple(lmLeft, lmRight)) {
+    detectedGesture = 'purple';
+  } else if (lmLeft && lmRight && detectSukuna(lmLeft, lmRight)) {
+    detectedGesture = 'sukuna';
+  } else if (lmAny && detectGojo(lmAny)) {
+    detectedGesture = 'gojo';
+  } else if (lmAny && detectRed(lmAny)) {
+    detectedGesture = 'red';
+  }
+
+  // State machine logic
+  if (detectedGesture !== state.gesture) {
+    // Gesture changed — reset charge
+    state.gesture     = detectedGesture;
+    state.chargeStart = detectedGesture ? now : null;
+    state.chargeProgress = 0;
+    if (!state.activated) {
+      state.activated = false;
+      state.activationTimer = 0;
+    }
+  }
+
+  // Update charge progress
+  if (state.gesture && state.chargeStart && !state.activated) {
+    const elapsed = now - state.chargeStart;
+    state.chargeProgress = Math.min(elapsed / CHARGE_TIME, 1);
+    if (state.chargeProgress >= 1) {
+      activateTechnique(state.gesture, lmLeft, lmRight, lmAny);
+      state.activated = true;
+      state.activationTimer = now;
+    }
+  }
+
+  // Auto-reset activation after 3s
+  if (state.activated && now - state.activationTimer > 3000) {
+    state.activated = false;
+    state.chargeProgress = 0;
+    state.chargeStart = null;
+    state.gesture = null;
+  }
+
+  // ── Red: launch on forward thrust ──
+  if (state.gesture === 'red' && lmAny) {
+    const wristZ = lmAny[LM.WRIST].z;
+    if (state.redPrevZ !== null) {
+      const dz = state.redPrevZ - wristZ; // positive = coming toward camera
+      if (dz > 0.06 && state.redState === 'charging') {
+        fireRedOrb(lmAny);
+      }
+    }
+    state.redPrevZ = wristZ;
+    if (state.chargeProgress > 0.3) state.redState = 'charging';
+    else state.redState = 'idle';
+  } else {
+    state.redState = 'idle';
+    state.redPrevZ = null;
+  }
+
+  updateHUD(detectedGesture, handResults.length);
+}
+
+/* ============================================================
+   HUD UPDATE
+============================================================ */
+const techNameEl   = document.getElementById('technique-name');
+const chargeBEl    = document.getElementById('charge-bar');
+const chargeWEl    = document.getElementById('charge-bar-wrap');
+const statusLblEl  = document.getElementById('status-label');
+const handLeftDot  = document.getElementById('hand-left');
+const handRightDot = document.getElementById('hand-right');
+const fpsDisplay   = document.getElementById('fps-display');
+
+const TECHNIQUE_LABELS = {
+  gojo:   '無量空処 — INFINITE VOID',
+  sukuna: '解 — MALEVOLENT SHRINE',
+  red:    '赤 — CURSED REVERSAL: RED',
+  purple: '紫 — HOLLOW PURPLE',
+};
+const TECHNIQUE_COLORS = {
+  gojo:   'var(--gojo-blue)',
+  sukuna: 'var(--sukuna-red)',
+  red:    'var(--sukuna-red)',
+  purple: 'var(--hollow-purple)',
+};
+
+function updateHUD(gesture, handCount) {
+  // Hand dots
+  handLeftDot.className  = 'hand-dot ' + (state.hands.some(h=>h.handedness==='Left') ? 'active' : '');
+  handRightDot.className = 'hand-dot ' + (state.hands.some(h=>h.handedness==='Right') ? 'active' : '');
+
+  if (gesture) {
+    const color = TECHNIQUE_COLORS[gesture];
+    techNameEl.textContent = TECHNIQUE_LABELS[gesture];
+    techNameEl.style.color = color;
+    techNameEl.style.opacity = '1';
+    chargeBEl.style.background = `linear-gradient(90deg, ${color}, white)`;
+    chargeBEl.style.width = (state.chargeProgress * 100) + '%';
+    chargeWEl.style.opacity = '1';
+    statusLblEl.textContent = state.activated ? 'ACTIVATED' : 'CHARGING...';
+    statusLblEl.style.opacity = '1';
+    statusLblEl.style.color = state.activated ? color : 'var(--text-dim)';
+  } else {
+    techNameEl.style.opacity = '0';
+    chargeWEl.style.opacity = '0';
+    statusLblEl.style.opacity = handCount > 0 ? '1' : '0';
+    statusLblEl.textContent = handCount > 0 ? 'HAND DETECTED — SCANNING...' : '';
+    chargeBEl.style.width = '0%';
+  }
+}
+
+/* ============================================================
+   TECHNIQUE ACTIVATION
+============================================================ */
+function activateTechnique(gesture, lmLeft, lmRight, lmAny) {
+  switch(gesture) {
+    case 'gojo':   triggerInfiniteVoid(); break;
+    case 'sukuna': triggerMalevolentShrine(); break;
+    case 'red':    // Red orb auto-fires on thrust; here just charge effect
+      if (lmAny) beginRedCharge(lmAny); break;
+    case 'purple':
+      if (lmLeft && lmRight) triggerHollowPurple(lmLeft, lmRight); break;
+  }
+  announceText(TECHNIQUE_LABELS[gesture], TECHNIQUE_COLORS[gesture]);
+}
+
+/* ============================================================
+   ANNOUNCE BANNER
+============================================================ */
+function announceText(text, color) {
+  const el = document.getElementById('announce-text');
+  el.textContent = text;
+  el.style.color = color;
+  el.style.textShadow = `0 0 40px ${color}, 0 0 80px ${color}`;
+  el.style.animation = 'none';
+  el.offsetHeight; // reflow
+  el.style.animation = 'announce-in 2.5s ease-out forwards';
+}
+
+/* ============================================================
+   VFX: INFINITE VOID (Gojo)
+   Full-screen reality-shift — concentric rings + void collapse
+============================================================ */
+let domainAnimId = null;
+
+function triggerInfiniteVoid() {
+  const overlay = document.getElementById('domain-overlay');
+  overlay.style.opacity = '1';
+
+  // Create canvas inside overlay
+  let dc = document.getElementById('domain-canvas');
+  if (!dc) {
+    dc = document.createElement('canvas');
+    dc.id = 'domain-canvas';
+    dc.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;';
+    overlay.appendChild(dc);
+  }
+  dc.width = W; dc.height = H;
+  const dCtx = dc.getContext('2d');
+
+  let t = 0;
+  if (domainAnimId) cancelAnimationFrame(domainAnimId);
+
+  function drawDomain() {
+    dCtx.clearRect(0,0,W,H);
+    t += 0.025;
+
+    // Deep void background
+    const bg = dCtx.createRadialGradient(W/2,H/2,0, W/2,H/2,Math.max(W,H)*0.8);
+    bg.addColorStop(0, `rgba(0,0,40,${Math.min(t*0.3, 0.9)})`);
+    bg.addColorStop(1, `rgba(0,0,10,${Math.min(t*0.5, 0.97)})`);
+    dCtx.fillStyle = bg;
+    dCtx.fillRect(0,0,W,H);
+
+    // Concentric ripple rings
+    for (let i = 0; i < 12; i++) {
+      const phase = (t * 0.8 + i * 0.5) % (2 * Math.PI);
+      const radius = (Math.sin(phase) * 0.5 + 0.5) * Math.max(W,H) * 0.6 + i * 30;
+      const alpha = Math.max(0, Math.cos(phase) * 0.3 + 0.15);
+      dCtx.beginPath();
+      dCtx.arc(W/2, H/2, radius, 0, Math.PI*2);
+      dCtx.strokeStyle = `rgba(0, ${100+i*12}, ${200+i*5}, ${alpha})`;
+      dCtx.lineWidth = 1.5;
+      dCtx.stroke();
+    }
+
+    // Rotating hexagonal grid distortion
+    dCtx.save();
+    dCtx.translate(W/2, H/2);
+    dCtx.rotate(t * 0.1);
+    for (let row = -20; row < 20; row++) {
+      for (let col = -20; col < 20; col++) {
+        const hx = col * 55 + (row % 2) * 27;
+        const hy = row * 48;
+        const d = Math.sqrt(hx*hx + hy*hy);
+        const pulse = Math.sin(d * 0.02 - t * 2) * 0.5 + 0.5;
+        dCtx.beginPath();
+        for (let s = 0; s < 6; s++) {
+          const a = s * Math.PI / 3;
+          const r = 22 * (1 + pulse * 0.3);
+          s === 0 ? dCtx.moveTo(hx + Math.cos(a)*r, hy + Math.sin(a)*r)
+                  : dCtx.lineTo(hx + Math.cos(a)*r, hy + Math.sin(a)*r);
+        }
+        dCtx.closePath();
+        dCtx.strokeStyle = `rgba(0, 180, 255, ${pulse * 0.15})`;
+        dCtx.lineWidth = 0.5;
+        dCtx.stroke();
+      }
+    }
+    dCtx.restore();
+
+    // Central eye
+    const eyeGrad = dCtx.createRadialGradient(W/2,H/2,0, W/2,H/2,80);
+    eyeGrad.addColorStop(0, 'rgba(255,255,255,0.9)');
+    eyeGrad.addColorStop(0.3, 'rgba(0,212,255,0.6)');
+    eyeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    dCtx.beginPath();
+    dCtx.arc(W/2,H/2, 80 + Math.sin(t*3)*10, 0, Math.PI*2);
+    dCtx.fillStyle = eyeGrad;
+    dCtx.fill();
+
+    if (t < 10) {
+      domainAnimId = requestAnimationFrame(drawDomain);
+    } else {
+      // Fade out
+      let fadeAlpha = 1;
+      const fadeOut = () => {
+        fadeAlpha -= 0.04;
+        overlay.style.opacity = Math.max(fadeAlpha, 0);
+        if (fadeAlpha > 0) requestAnimationFrame(fadeOut);
+        else { overlay.style.opacity = '0'; dCtx.clearRect(0,0,W,H); }
+      };
+      fadeOut();
+    }
+  }
+  drawDomain();
+}
+
+/* ============================================================
+   VFX: MALEVOLENT SHRINE (Sukuna)
+   Sharp slashing lines + cursed energy cracks
+============================================================ */
+const slashes = [];
+
+function triggerMalevolentShrine() {
+  // Screen shake
+  document.body.style.animation = 'screen-shake 0.4s ease';
+  setTimeout(() => document.body.style.animation = '', 400);
+
+  slashCanvas.style.opacity = '1';
+  const count = 14;
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => spawnSlash(), i * 60);
+  }
+  setTimeout(() => {
+    let a = 1;
+    const fade = () => {
+      a -= 0.03;
+      slashCanvas.style.opacity = Math.max(a, 0);
+      if (a > 0) requestAnimationFrame(fade);
+    };
+    fade();
+  }, count * 60 + 500);
+}
+
+function spawnSlash() {
+  const startX = Math.random() * W;
+  const startY = Math.random() * H;
+  const angle  = (Math.random() - 0.5) * Math.PI * 0.6;
+  const length = 200 + Math.random() * 400;
+  slashes.push({
+    x: startX, y: startY,
+    ex: startX + Math.cos(angle) * length,
+    ey: startY + Math.sin(angle) * length,
+    life: 1,
+    color: Math.random() > 0.6 ? '#ff1a1a' : '#ffffff',
+    width: 1 + Math.random() * 3,
+  });
+}
+
+// Slash render happens in aura draw loop
+
+/* ============================================================
+   VFX: CURSED REVERSAL RED
+   Glowing red orb at index fingertip, fires on thrust
+============================================================ */
+const redOrbs = [];
+
+function beginRedCharge(lm) {
+  // Just visual charge — orb drawn in aura loop
+}
+
+function fireRedOrb(lm) {
+  if (state.redState !== 'charging') return;
+  state.redState = 'fired';
+  // Get index fingertip position
+  const tip = lm[LM.I_TIP];
+  redOrbs.push({
+    x: (1 - tip.x) * W, // mirrored
+    y: tip.y * H,
+    vx: (Math.random() - 0.5) * 6,
+    vy: -15 + Math.random() * 4,
+    radius: 20,
+    maxRadius: 80 + Math.random() * 40,
+    life: 1,
+    phase: 'expand',
+  });
+}
+
+/* ============================================================
+   VFX: HOLLOW PURPLE
+   Massive swirling purple sphere between/in front of hands
+============================================================ */
+let purpleSphere = null;
+
+function triggerHollowPurple(lmLeft, lmRight) {
+  // Midpoint between hands
+  const mx = ((1 - lmLeft[LM.WRIST].x) * W + (1 - lmRight[LM.WRIST].x) * W) / 2;
+  const my = (lmLeft[LM.WRIST].y * H + lmRight[LM.WRIST].y * H) / 2;
+
+  document.body.style.animation = 'screen-shake 0.6s ease';
+  setTimeout(() => document.body.style.animation = '', 600);
+
+  purpleSphere = {
+    x: mx, y: my,
+    radius: 10,
+    maxRadius: Math.max(W, H) * 1.2,
+    life: 1,
+    phase: 'expand',
+    t: 0,
+    particles: Array.from({length: 80}, () => ({
+      angle: Math.random() * Math.PI * 2,
+      speed: 2 + Math.random() * 6,
+      dist: Math.random() * 60,
+      size: 2 + Math.random() * 6,
+      color: Math.random() > 0.5 ? '#c940ff' : '#4040ff',
+    }))
+  };
+}
+
+/* ============================================================
+   AURA + VFX DRAW LOOP
+   Runs every animation frame
+============================================================ */
+// Particle system for continuous cursed energy aura
+const particles = [];
+const MAX_PARTICLES = 300;
+
+function spawnAuraParticle(x, y, color) {
+  if (particles.length > MAX_PARTICLES) return;
+  particles.push({
+    x, y,
+    vx: (Math.random() - 0.5) * 2,
+    vy: -1 - Math.random() * 3,
+    size: 1 + Math.random() * 3,
+    life: 1,
+    color,
+    decay: 0.02 + Math.random() * 0.03,
+  });
+}
+
+let lastDrawTime = 0;
+
+function drawAura(timestamp) {
+  const dt = timestamp - lastDrawTime;
+  lastDrawTime = timestamp;
+
+  // FPS counter
+  frameCount++;
+  if (timestamp - lastFpsTime > 1000) {
+    fps = frameCount;
+    frameCount = 0;
+    lastFpsTime = timestamp;
+    fpsDisplay.textContent = fps + ' FPS';
+  }
+
+  auraCtx.clearRect(0, 0, W, H);
+
+  // Draw webcam feed
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    camCtx.clearRect(0, 0, W, H);
+    camCtx.drawImage(video, 0, 0, W, H);
+  }
+
+  // ── Per-hand aura ──
+  for (const h of state.hands) {
+    const lm = h.landmarks;
+    const isLeft = h.handedness === 'Left';
+
+    // Determine aura color based on gesture
+    let auraColor = isLeft ? '#4040ff' : '#00d4ff';
+    if (state.gesture === 'red') auraColor = '#ff3300';
+    else if (state.gesture === 'sukuna') auraColor = '#ff1a1a';
+    else if (state.gesture === 'purple') auraColor = isLeft ? '#4040ff' : '#c940ff';
+
+    // Spawn particles at key landmarks
+    const keyPoints = [LM.WRIST, LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP, LM.T_TIP,
+                       LM.I_MCP, LM.M_MCP, LM.R_MCP, LM.P_MCP];
+    for (const idx of keyPoints) {
+      if (Math.random() > 0.4) continue;
+      const pt = lm[idx];
+      // Mirror X for canvas (camera is mirrored)
+      spawnAuraParticle((1 - pt.x) * W, pt.y * H, auraColor);
+    }
+
+    // Draw glowing lines connecting landmarks (hand skeleton with glow)
+    drawHandSkeleton(auraCtx, lm, auraColor);
+
+    // Extra glow on fingertips
+    for (const tipIdx of [LM.T_TIP, LM.I_TIP, LM.M_TIP, LM.R_TIP, LM.P_TIP]) {
+      const tip = lm[tipIdx];
+      const cx = (1 - tip.x) * W;
+      const cy = tip.y * H;
+      const pulse = 0.6 + 0.4 * Math.sin(timestamp * 0.005 + tipIdx);
+      const r = 8 + pulse * 6;
+      const g = auraCtx.createRadialGradient(cx, cy, 0, cx, cy, r * 2);
+      g.addColorStop(0, auraColor.replace(')', `, ${pulse * 0.8})`).replace('rgb', 'rgba').replace('#', 'rgba(').replace('rgba(ff', 'rgba(255,'));
+      // Simpler approach:
+      drawGlow(auraCtx, cx, cy, r * 2, auraColor, pulse * 0.6);
+    }
+
+    // Red: draw charging orb at index fingertip
+    if (state.gesture === 'red' && state.chargeProgress > 0.1) {
+      const tip = lm[LM.I_TIP];
+      const cx = (1 - tip.x) * W;
+      const cy = tip.y * H;
+      const orbR = state.chargeProgress * 30;
+      drawGlow(auraCtx, cx, cy, orbR * 3, '#ff2200', 0.8);
+      // Pulsing core
+      auraCtx.beginPath();
+      auraCtx.arc(cx, cy, orbR * (0.8 + 0.2 * Math.sin(timestamp * 0.01)), 0, Math.PI * 2);
+      auraCtx.fillStyle = `rgba(255, 100, 0, ${state.chargeProgress * 0.9})`;
+      auraCtx.fill();
+    }
+
+    // Purple: draw charging sphere
+    if (state.gesture === 'purple' && state.chargeProgress > 0.2) {
+      const wx = (1 - lm[LM.WRIST].x) * W;
+      const wy = lm[LM.WRIST].y * H;
+      const r = state.chargeProgress * 40;
+      const col = isLeft ? '#4040ff' : '#c940ff';
+      drawGlow(auraCtx, wx, wy, r * 3, col, 0.7);
+    }
+  }
+
+  // ── Update and draw particles ──
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    p.vy -= 0.05; // slight upward drift
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    auraCtx.globalAlpha = p.life;
+    auraCtx.beginPath();
+    auraCtx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    auraCtx.fillStyle = p.color;
+    auraCtx.fill();
+  }
+  auraCtx.globalAlpha = 1;
+
+  // ── Draw slashes ──
+  slashCtx.clearRect(0, 0, W, H);
+  for (let i = slashes.length - 1; i >= 0; i--) {
+    const s = slashes[i];
+    s.life -= 0.025;
+    if (s.life <= 0) { slashes.splice(i, 1); continue; }
+    slashCtx.save();
+    slashCtx.globalAlpha = s.life;
+    // Glow
+    slashCtx.shadowColor = s.color;
+    slashCtx.shadowBlur = 20;
+    slashCtx.strokeStyle = s.color;
+    slashCtx.lineWidth = s.width;
+    slashCtx.beginPath();
+    slashCtx.moveTo(s.x, s.y);
+    slashCtx.lineTo(s.ex, s.ey);
+    slashCtx.stroke();
+    // White core
+    slashCtx.shadowBlur = 5;
+    slashCtx.strokeStyle = 'rgba(255,255,255,0.8)';
+    slashCtx.lineWidth = s.width * 0.3;
+    slashCtx.stroke();
+    slashCtx.restore();
+  }
+
+  // ── Draw red orbs ──
+  for (let i = redOrbs.length - 1; i >= 0; i--) {
+    const orb = redOrbs[i];
+    orb.x += orb.vx;
+    orb.y += orb.vy;
+    orb.life -= 0.012;
+    if (orb.phase === 'expand' && orb.radius < orb.maxRadius) {
+      orb.radius += (orb.maxRadius - orb.radius) * 0.08;
+    }
+    if (orb.life <= 0) { redOrbs.splice(i, 1); continue; }
+    auraCtx.save();
+    auraCtx.globalAlpha = orb.life;
+    drawGlow(auraCtx, orb.x, orb.y, orb.radius, '#ff2200', 0.9);
+    // Core
+    auraCtx.beginPath();
+    auraCtx.arc(orb.x, orb.y, orb.radius * 0.3, 0, Math.PI * 2);
+    auraCtx.fillStyle = 'rgba(255,200,100,0.9)';
+    auraCtx.fill();
+    auraCtx.restore();
+  }
+
+  // ── Draw purple sphere ──
+  if (purpleSphere) {
+    const ps = purpleSphere;
+    ps.t += 0.04;
+    if (ps.phase === 'expand') {
+      ps.radius = Math.min(ps.radius + ps.radius * 0.06 + 5, ps.maxRadius);
+      if (ps.radius >= ps.maxRadius) ps.phase = 'burst';
+    } else if (ps.phase === 'burst') {
+      ps.life -= 0.02;
+    }
+    if (ps.life <= 0) { purpleSphere = null; }
+    else {
+      auraCtx.save();
+      auraCtx.globalAlpha = ps.life;
+      // Outer glow
+      const g = auraCtx.createRadialGradient(ps.x, ps.y, 0, ps.x, ps.y, ps.radius);
+      g.addColorStop(0, `rgba(200, 64, 255, ${ps.phase === 'burst' ? 0.3 : 0.7})`);
+      g.addColorStop(0.5, `rgba(64, 64, 255, ${ps.phase === 'burst' ? 0.2 : 0.4})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      auraCtx.beginPath();
+      auraCtx.arc(ps.x, ps.y, ps.radius, 0, Math.PI * 2);
+      auraCtx.fillStyle = g;
+      auraCtx.fill();
+
+      // Swirling particle ring (if not burst yet)
+      if (ps.phase !== 'burst') {
+        for (const p of ps.particles) {
+          p.angle += p.speed * 0.01;
+          const px = ps.x + Math.cos(p.angle + ps.t) * (ps.radius * 0.6 + p.dist);
+          const py = ps.y + Math.sin(p.angle + ps.t) * (ps.radius * 0.4 + p.dist * 0.5);
+          auraCtx.beginPath();
+          auraCtx.arc(px, py, p.size * ps.life, 0, Math.PI * 2);
+          auraCtx.fillStyle = p.color;
+          auraCtx.fill();
+        }
+      }
+      auraCtx.restore();
+    }
+  }
+
+  requestAnimationFrame(drawAura);
+}
+
+/* ============================================================
+   HAND SKELETON DRAWING
+============================================================ */
+const HAND_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],        // Thumb
+  [0,5],[5,6],[6,7],[7,8],        // Index
+  [0,9],[9,10],[10,11],[11,12],   // Middle
+  [0,13],[13,14],[14,15],[15,16], // Ring
+  [0,17],[17,18],[18,19],[19,20], // Pinky
+  [5,9],[9,13],[13,17],           // Palm
+];
+
+function drawHandSkeleton(ctx, lm, color) {
+  ctx.save();
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = color.replace(')', ', 0.7)').replace('#', 'rgba(')
+    // fallback for hex colors:
+    || color;
+  ctx.lineWidth = 2;
+
+  // Parse hex to rgba
+  const hexToRgba = (hex, alpha) => {
+    const r = parseInt(hex.slice(1,3),16);
+    const g = parseInt(hex.slice(3,5),16);
+    const b = parseInt(hex.slice(5,7),16);
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
+
+  ctx.strokeStyle = hexToRgba(color, 0.65);
+
+  for (const [a, b] of HAND_CONNECTIONS) {
+    ctx.beginPath();
+    ctx.moveTo((1 - lm[a].x) * W, lm[a].y * H);
+    ctx.lineTo((1 - lm[b].x) * W, lm[b].y * H);
+    ctx.stroke();
+  }
+
+  // Joint dots
+  for (const pt of lm) {
+    ctx.beginPath();
+    ctx.arc((1 - pt.x) * W, pt.y * H, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(color, 0.9);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawGlow(ctx, x, y, r, color, alpha) {
+  const hexToRgba = (hex, a) => {
+    if (hex.startsWith('#')) {
+      const rv = parseInt(hex.slice(1,3),16);
+      const gv = parseInt(hex.slice(3,5),16);
+      const bv = parseInt(hex.slice(5,7),16);
+      return `rgba(${rv},${gv},${bv},${a})`;
+    }
+    return hex;
+  };
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0,   hexToRgba(color, alpha));
+  g.addColorStop(0.4, hexToRgba(color, alpha * 0.5));
+  g.addColorStop(1,   hexToRgba(color, 0));
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+}
+
+/* ============================================================
+   MEDIAPIPE SETUP
+============================================================ */
+async function initMediaPipe() {
+  hands = new Hands({locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+  }});
+
+  hands.setOptions({
+    maxNumHands: 2,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.7,
+    minTrackingConfidence: 0.6,
+  });
+
+  hands.onResults((results) => {
+    const handData = [];
+    if (results.multiHandLandmarks) {
+      for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+        handData.push({
+          landmarks: results.multiHandLandmarks[i],
+          handedness: results.multiHandedness[i].label, // 'Left' or 'Right'
+        });
+      }
+    }
+    updateGestureState(handData);
+  });
+
+  camera = new Camera(video, {
+    onFrame: async () => {
+      await hands.send({image: video});
+    },
+    width: 1280, height: 720,
+    facingMode: 'user',
+  });
+}
+
+/* ============================================================
+   INITIALIZATION FLOW
+============================================================ */
+document.getElementById('start-btn').addEventListener('click', async () => {
+  const startScreen = document.getElementById('start-screen');
+  const loadingScreen = document.getElementById('loading-screen');
+  const hud = document.getElementById('hud');
+
+  // Show loading
+  startScreen.style.display = 'none';
+  loadingScreen.style.display = 'flex';
+
+  const bar = document.getElementById('loading-bar');
+  const loadingText = document.getElementById('loading-text');
+
+  // Simulate loading steps
+  const steps = [
+    [20, 'LOADING MEDIAPIPE HAND MODEL...'],
+    [45, 'INITIALIZING CURSED ENERGY SENSORS...'],
+    [70, 'CALIBRATING GESTURE RECOGNITION...'],
+    [90, 'BINDING TECHNIQUE DATABASE...'],
+    [100, 'DOMAIN ACCESS GRANTED'],
+  ];
+
+  // Actually init mediapipe
+  const initPromise = initMediaPipe();
+
+  for (const [progress, text] of steps) {
+    bar.style.width = progress + '%';
+    loadingText.textContent = text;
+    await new Promise(r => setTimeout(r, 400 + Math.random() * 300));
+  }
+
+  await initPromise;
+  await camera.start();
+
+  // Transition to main view
+  loadingScreen.style.opacity = '0';
+  loadingScreen.style.transition = 'opacity 0.5s';
+  setTimeout(() => {
+    loadingScreen.style.display = 'none';
+    hud.style.display = 'block';
+  }, 500);
+
+  // Start draw loop
+  requestAnimationFrame(drawAura);
+});
+
+/* ============================================================
+   VIDEO DIMENSIONS SYNC
+============================================================ */
+video.addEventListener('loadedmetadata', () => {
+  resize();
+});
+
+</script>
+</body>
+</html>
